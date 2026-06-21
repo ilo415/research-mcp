@@ -1,6 +1,6 @@
 {
   "name": "ilo415-research-mcp",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "MCP server for AI-powered research \u2014 company intel, competitive analysis, industry, person, topic, web scrape. Listed on MCP Registry as io.github.ilo415/research.",
   "type": "module",
   "main": "src/index.mjs",
@@ -28,15 +28,15 @@
     "type": "git",
     "url": "git+https://github.com/ilo415/research-mcp.git"
   },
+  "homepage": "https://github.com/ilo415/research-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/ilo415/research-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.8.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "@types/node": "^22.0.0"
-  },
-  "homepage": "https://github.com/ilo415/research-mcp#readme",
-  "bugs": {
-    "url": "https://github.com/ilo415/research-mcp/issues"
   }
 }

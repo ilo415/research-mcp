@@ -1,16 +1,40 @@
 #!/usr/bin/env node
 
-// @anomalous/research-mcp
-// MCP server for AI-powered research via Hermes Agent
-// Usage: npx @anomalous/research-mcp
+// @anomalous/research-mcp v1.1.0
+// MCP server for AI-powered research
+// Usage: npx ilo415-research-mcp
+// With API key: ANOMALOUS_API_KEY=ano_xxx npx ilo415-research-mcp
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { execSync } from "child_process";
 
-const HERMES_CONTAINER = process.env.HERMES_CONTAINER || "hermes-agent-sdlo-hermes-agent-1";
-const HERMES_CLI = process.env.HERMES_CLI || "/opt/hermes/bin/hermes";
+const API_KEY = process.env.ANOMALOUS_API_KEY || "";
+const API_URL = "https://research.anomalousagency.tech/api/v1/research";
+
+// ─── Remote API mode (subscribers with API key) ────────────────────────────────
+
+async function researchViaApi(query, type, maxResults) {
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY,
+    },
+    body: JSON.stringify({ query, type, max_results: maxResults }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(err.error || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.result;
+}
+
+// ─── Local mode (no API key — runs Hermes CLI) ─────────────────────────────────
 
 const PROMPTS = {
   company: (q, m) => `Research the following company: ${q}
@@ -85,11 +109,12 @@ If this is a URL, visit it and extract the key content. If it's a subject, resea
 Keep it concise and factual. Max ${m} key findings.`,
 };
 
-function runResearch(query, type, maxResults) {
+function runResearchLocal(query, type, maxResults) {
   const prompt = (PROMPTS[type] || PROMPTS.topic)(query, maxResults);
+  const hermesCli = process.env.HERMES_CLI || "/home/hermes/.local/bin/hermes";
   const output = execSync(
-    `docker exec ${HERMES_CONTAINER} ${HERMES_CLI} chat -q ${JSON.stringify(prompt)}`,
-    { timeout: 120_000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" }
+    `${hermesCli} chat -q ${JSON.stringify(prompt)}`,
+    { timeout: 120_000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, HERMES_INTERACTIVE: "0", HERMES_QUIET: "1" } }
   );
   const lines = output.split("\n");
   const body = [];
@@ -104,9 +129,20 @@ function runResearch(query, type, maxResults) {
   return body.join("\n").trim() || output.slice(0, 3000);
 }
 
+// ─── Router: API key → remote API, otherwise local ────────────────────────────
+
+async function runResearch(query, type, maxResults) {
+  if (API_KEY) {
+    return await researchViaApi(query, type, maxResults);
+  }
+  return runResearchLocal(query, type, maxResults);
+}
+
+// ─── MCP Server ────────────────────────────────────────────────────────────────
+
 const server = new McpServer({
   name: "anomalous-research",
-  version: "1.0.0",
+  version: "1.1.0",
 });
 
 server.tool(
@@ -114,7 +150,7 @@ server.tool(
   "Research a company: overview, key facts, recent news, market position, competitors.",
   { query: z.string().describe("Company name to research"), max_results: z.number().optional().describe("Max key findings (default 5)") },
   async ({ query, max_results }) => {
-    const result = runResearch(query, "company", max_results ?? 5);
+    const result = await runResearch(query, "company", max_results ?? 5);
     return { content: [{ type: "text", text: result }] };
   }
 );
@@ -124,7 +160,7 @@ server.tool(
   "Competitive analysis: market landscape, side-by-side comparison, positioning.",
   { query: z.string().describe("Company, product, or market to analyze"), max_results: z.number().optional() },
   async ({ query, max_results }) => {
-    const result = runResearch(query, "competitor", max_results ?? 5);
+    const result = await runResearch(query, "competitor", max_results ?? 5);
     return { content: [{ type: "text", text: result }] };
   }
 );
@@ -134,7 +170,7 @@ server.tool(
   "Industry/market analysis: market size, key players, trends, regulatory landscape.",
   { query: z.string().describe("Industry or market name"), max_results: z.number().optional() },
   async ({ query, max_results }) => {
-    const result = runResearch(query, "industry", max_results ?? 5);
+    const result = await runResearch(query, "industry", max_results ?? 5);
     return { content: [{ type: "text", text: result }] };
   }
 );
@@ -144,7 +180,7 @@ server.tool(
   "Person profile: background, career, education, achievements, public presence.",
   { query: z.string().describe("Person's name to research"), max_results: z.number().optional() },
   async ({ query, max_results }) => {
-    const result = runResearch(query, "person", max_results ?? 5);
+    const result = await runResearch(query, "person", max_results ?? 5);
     return { content: [{ type: "text", text: result }] };
   }
 );
@@ -154,7 +190,7 @@ server.tool(
   "General topic research: context, facts, recent developments, perspectives.",
   { query: z.string().describe("Topic to research"), max_results: z.number().optional() },
   async ({ query, max_results }) => {
-    const result = runResearch(query, "topic", max_results ?? 5);
+    const result = await runResearch(query, "topic", max_results ?? 5);
     return { content: [{ type: "text", text: result }] };
   }
 );
@@ -164,7 +200,7 @@ server.tool(
   "Extract and summarize content from a URL or subject.",
   { query: z.string().describe("URL or subject to extract/summarize"), max_results: z.number().optional() },
   async ({ query, max_results }) => {
-    const result = runResearch(query, "scrape", max_results ?? 5);
+    const result = await runResearch(query, "scrape", max_results ?? 5);
     return { content: [{ type: "text", text: result }] };
   }
 );
@@ -172,7 +208,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Anomalous Research MCP Server running");
+  console.error(`Anomalous Research MCP Server v1.1.0 — ${API_KEY ? "API key mode (remote)" : "local mode"}`);
 }
 
 main().catch((err) => {
